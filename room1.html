@@ -190,102 +190,141 @@ body {
   <input id="social-link" placeholder="Your social link" />
   <button onclick="saveProfile()">Save</button>
 </div>
-
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+/* ==========================
+   SUPABASE (GLOBAL)
+========================== */
+const supabase = window.supabase.createClient(
+  'https://hwymepujsvfqjkbullaf.supabase.co',
+  'YOUR_PUBLIC_ANON_KEY'
+);
 
-  /* Floating shapes */
-  const shapes = document.getElementById('shapes');
-  for (let i = 0; i < 20; i++) {
-    const s = document.createElement('div');
-    s.className = 'shape';
-    s.style.width = s.style.height = (10 + Math.random() * 30) + 'px';
-    s.style.top = Math.random() * 100 + '%';
-    s.style.left = Math.random() * 100 + '%';
-    s.style.background = 'linear-gradient(45deg,#f0f,#0ff,#ff0)';
-    s.style.animationDuration = (10 + Math.random() * 20) + 's';
-    shapes.appendChild(s);
+let currentUser = null;
+let authMode = null;
+
+/* ==========================
+   AUTH UI
+========================== */
+function showSignUp() {
+  authMode = 'signup';
+  authForm().style.display = 'block';
+  authButtons().style.display = 'none';
+  usernameInput().style.display = 'block';
+}
+
+function showSignIn() {
+  authMode = 'signin';
+  authForm().style.display = 'block';
+  authButtons().style.display = 'none';
+  usernameInput().style.display = 'none';
+}
+
+function cancelAuth() {
+  authForm().style.display = 'none';
+  authButtons().style.display = 'flex';
+}
+
+function authForm() {
+  return document.getElementById('auth-form');
+}
+function authButtons() {
+  return document.getElementById('auth-buttons');
+}
+function usernameInput() {
+  return document.getElementById('auth-username');
+}
+
+/* ==========================
+   AUTH SUBMIT
+========================== */
+async function submitAuth() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value.trim();
+  const username = document.getElementById('auth-username').value.trim();
+
+  if (!email || !password) {
+    alert('Missing fields');
+    return;
   }
 
-  /* Supabase */
-  const supabase = window.supabase.createClient(
-    'https://hwymepujsvfqjkbullaf.supabase.co',
-    'YOUR_PUBLIC_ANON_KEY'
-  );
-
-  window.authMode = null;
-
-  window.showSignUp = () => {
-    authMode = 'signup';
-    document.getElementById('auth-form').style.display = 'block';
-    document.getElementById('auth-buttons').style.display = 'none';
-    document.getElementById('auth-username').style.display = 'block';
-    document.getElementById('signup-message').innerText = '';
-  };
-
-  window.showSignIn = () => {
-    authMode = 'signin';
-    document.getElementById('auth-form').style.display = 'block';
-    document.getElementById('auth-buttons').style.display = 'none';
-    document.getElementById('auth-username').style.display = 'none';
-    document.getElementById('signup-message').innerText = '';
-  };
-
-  window.cancelAuth = () => {
-    document.getElementById('auth-form').style.display = 'none';
-    document.getElementById('auth-buttons').style.display = 'flex';
-  };
-
-  window.submitAuth = async () => {
-    const email = auth-email.value;
-    const password = auth-password.value;
-    const username = auth-username.value.trim();
-
-    if (!email || !password) return alert('Missing fields');
-
-    if (authMode === 'signup') {
-      if (!username) return alert('Choose a username');
-
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { username } }
-      });
-
-      if (error) return alert(error.message);
-
-      signup-message.innerText =
-        'Signup successful! Check your email to confirm.';
-      auth-form.style.display = 'none';
-      auth-buttons.innerHTML = '<button onclick="showSignIn()">Log In</button>';
-      auth-buttons.style.display = 'flex';
+  if (authMode === 'signup') {
+    if (!username) {
+      alert('Choose a username');
+      return;
     }
 
-    if (authMode === 'signin') {
-      const { data, error } =
-        await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { username }
+      }
+    });
 
-      if (error) return alert(error.message);
-
-      const name =
-        data.user.user_metadata.username || data.user.email;
-
-      document.getElementById('auth-form').style.display = 'none';
-      document.getElementById('main-content').style.display = 'block';
-      document.getElementById('chat-header').innerText = `Welcome, ${name}`;
-      document.getElementById('chat').innerText =
-        `Hello ${name}, welcome to Punk Zen.`;
+    if (error) {
+      alert(error.message);
+      return;
     }
-  };
+
+    alert('Signup successful! Check your email.');
+    cancelAuth();
+  }
+
+  if (authMode === 'signin') {
+    const { data, error } =
+      await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    currentUser = data.user;
+    onLogin();
+  }
+}
+
+/* ==========================
+   AUTH STATE (PERSISTENCE)
+========================== */
+supabase.auth.onAuthStateChange((event, session) => {
+  if (session?.user) {
+    currentUser = session.user;
+    onLogin();
+  } else {
+    currentUser = null;
+  }
 });
-  async function loadNotes() {
-  const { data, error } = await supabase
+
+/* ==========================
+   POST-LOGIN UI
+========================== */
+function onLogin() {
+  const name =
+    currentUser.user_metadata.username ||
+    currentUser.email.split('@')[0];
+
+  document.getElementById('auth-form').style.display = 'none';
+  document.getElementById('auth-buttons').style.display = 'none';
+  document.getElementById('main-content').style.display = 'block';
+
+  document.getElementById('chat-header').innerText =
+    `Welcome, ${name}`;
+
+  loadNotes();
+}
+
+/* ==========================
+   NOTES
+========================== */
+async function loadNotes() {
+  if (!currentUser) return;
+
+  const { data } = await supabase
     .from('chalkboard_notes')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(20);
-
-  if (error) return;
+    .limit(30);
 
   const board = document.getElementById('notes-board');
   board.innerHTML = '';
@@ -294,22 +333,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const div = document.createElement('div');
     div.className = 'note';
     div.style.setProperty('--rot', `${note.rotation}deg`);
-    div.innerHTML = `<strong>${note.username}</strong><br>${note.message}`;
+    div.innerHTML =
+      `<strong>${note.username}</strong><br>${note.message}`;
     board.appendChild(div);
   });
 }
 
 async function postNote() {
-  const message = document.getElementById('note-input').value;
+  if (!currentUser) return alert('Login first');
+
+  const message =
+    document.getElementById('note-input').value.trim();
+
   if (!message) return;
 
   const rotation = Math.floor(Math.random() * 10) - 5;
+  const username =
+    currentUser.user_metadata.username ||
+    currentUser.email.split('@')[0];
 
   const { error } = await supabase
     .from('chalkboard_notes')
     .insert({
       user_id: currentUser.id,
-      username: currentUser.email.split('@')[0],
+      username,
       message,
       rotation
     });
@@ -319,8 +366,15 @@ async function postNote() {
     loadNotes();
   }
 }
+
+/* ==========================
+   PROFILE
+========================== */
 async function saveProfile() {
-  const link = document.getElementById('social-link').value;
+  if (!currentUser) return;
+
+  const link =
+    document.getElementById('social-link').value;
 
   await supabase.from('profiles').upsert({
     id: currentUser.id,
@@ -330,5 +384,6 @@ async function saveProfile() {
   alert('Profile updated!');
 }
 </script>
+
 </body>
 </html>
